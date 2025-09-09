@@ -9,3 +9,4 @@ __pycache__/
 # IDE files
 .idea/
 .vscode/
+credentials.json

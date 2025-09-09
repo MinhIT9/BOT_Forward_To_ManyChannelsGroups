@@ -2,11 +2,14 @@
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
 from webdriver_manager.chrome import ChromeDriverManager
-# --- DÒNG IMPORT MỚI ---
 from selenium.webdriver.common.by import By
 from urllib.parse import urlencode
 import asyncio
 import time
+
+# Import các hàm từ module google_sheets và import config để lấy cờ IS_PROD
+from src.services.google_sheets import find_short_link_in_cache, save_short_link_to_cache
+import config
 
 # Biến toàn cục để giữ instance của trình duyệt
 driver = None
@@ -40,8 +43,33 @@ def close_browser():
         driver.quit()
         driver = None
 
+async def get_short_link(long_url: str, api_url: str, api_token: str, custom_alias: str = "") -> str | None:
+    """
+    Hàm chính để lấy link rút gọn.
+    Nó sẽ kiểm tra cache trước, nếu không có mới gọi Selenium.
+    """
+    # --- DÒNG ĐÃ SỬA ---
+    # Thêm lại tham số config.IS_PROD bị thiếu khi gọi hàm
+    cached_link = find_short_link_in_cache(long_url, config.IS_PROD)
+    # -------------------
+    
+    if cached_link:
+        return cached_link
+
+    print("Không có trong cache, bắt đầu quy trình Selenium...")
+    new_short_link = await asyncio.to_thread(
+        get_short_link_sync, long_url, api_url, api_token, custom_alias
+    )
+
+    if new_short_link:
+        save_short_link_to_cache(long_url, new_short_link, config.IS_PROD)
+
+    return new_short_link
+
 def get_short_link_sync(long_url: str, api_url: str, api_token: str, custom_alias: str = "") -> str | None:
-    """Hàm đồng bộ sử dụng Selenium để lấy link sau khi chuyển hướng."""
+    """
+    Hàm đồng bộ (sync) thực hiện công việc nặng nhọc với Selenium.
+    """
     if not driver:
         print("Lỗi: Trình duyệt Selenium chưa được khởi tạo.")
         return None
@@ -55,7 +83,7 @@ def get_short_link_sync(long_url: str, api_url: str, api_token: str, custom_alia
 
     try:
         driver.get(initial_url)
-        time.sleep(7) 
+        time.sleep(7)
         
         final_url = driver.current_url
 
@@ -64,24 +92,13 @@ def get_short_link_sync(long_url: str, api_url: str, api_token: str, custom_alia
             return final_url
         else:
             print(f"Lỗi API: Trang không chuyển hướng. URL cuối cùng vẫn là: {final_url}")
-            
-            # --- DÒNG ĐÃ SỬA ---
-            # Thay đổi cách lấy nội dung trang để ổn định hơn trong đa luồng
             try:
                 page_content = driver.find_element(By.TAG_NAME, 'body').text
                 print(f"Nội dung trang: {page_content[:200]}...")
             except Exception as find_error:
                 print(f"Không thể lấy nội dung trang để gỡ lỗi: {find_error}")
-            # --------------------
-            
             return None
             
     except Exception as e:
         print(f"Lỗi trong quá trình Selenium hoạt động: {e}")
         return None
-
-async def get_short_link(long_url: str, api_url: str, api_token: str, custom_alias: str = "") -> str | None:
-    """Hàm bất đồng bộ bao bọc hàm sync để tương thích với Telethon."""
-    return await asyncio.to_thread(
-        get_short_link_sync, long_url, api_url, api_token, custom_alias
-    )

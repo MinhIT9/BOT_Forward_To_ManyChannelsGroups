@@ -1,69 +1,49 @@
 # config.py
+from src.services.google_sheets import connect_to_sheet, load_config_from_sheet, load_cache_from_sheet
+import sys
 
-# --- CÀI ĐẶT MÔI TRƯỜNG ---
-# True: Chạy với cấu hình Production (dữ liệu thật).
-# False: Chạy với cấu hình Development (dữ liệu test).
+# --- CÁC BIẾN CỐ ĐỊNH ---
+# >>> ĐÂY LÀ NÚT ĐIỀU KHIỂN DUY NHẤT CỦA BẠN <<<
 IS_PROD = False
 
-# --- CÀI ĐẶT TELETHON CỐ ĐỊNH ---
-# Lấy từ https://my.telegram.org
 API_ID = 21303563
 API_HASH = "6ad9d81fb1c8e246de8255d7ecc449f5"
+GOOGLE_SHEET_NAME = "BotConfig" # THAY BẰNG TÊN GOOGLE SHEET CỦA BẠN
+
+# --- CẤU HÌNH DÙNG CHUNG CHO CẢ 2 MÔI TRƯỜNG ---
+# Thời gian giữa các lần dọn dẹp tự động, tính bằng giờ.
+CLEANUP_INTERVAL_HOURS = 48
+# --- BIẾN MỚI ---
+# Số ngày một link được coi là cũ nếu không được sử dụng.
+CACHE_EXPIRATION_DAYS = 30
+
 
 # --- BIẾN TẠM THỜI ---
-# ID của User Client sẽ được tự động điền vào đây khi chương trình khởi chạy.
-# Không cần thay đổi giá trị này.
 USER_CLIENT_ID = None
 
+# --- TẢI CẤU HÌNH VÀ CACHE KHI KHỞI ĐỘNG ---
+if not connect_to_sheet(GOOGLE_SHEET_NAME):
+    sys.exit("Không thể tiếp tục vì không kết nối được Google Sheet.")
 
-# --- CẤU HÌNH THEO TỪNG MÔI TRƯỜNG ---
-if IS_PROD:
-    # ==================================
-    # === CẤU HÌNH PRODUCTION (THẬT) ===
-    # ==================================
-    print(">>> CHẠY Ở MÔI TRƯỜNG PRODUCTION <<<")
-    
-    SESSION_NAME_USER = "prod_user"  # Sẽ tạo file prod_user.session
-    BOT_TOKEN = 'your_production_bot_token' # THAY BẰNG TOKEN BOT THẬT
-    
-    MAIN_CHANNEL_ID = -1001234567890 # THAY BẰNG ID CHANNEL CHÍNH (THẬT)
-    
-    TARGET_ENTITIES = {
-        'A': -100111111111,  # ID Channel/Group thật
-        'B': -100222222222,
-        # ...thêm các kênh/nhóm thật khác ở đây
-    }
-    
-    # Cấu hình API rút gọn link cho Production
-    SHORTENER_API_URL = "https://vuotlink.vip/api/api"
-    SHORTENER_API_TOKEN = "f6918c1748d0d50744ea2a417d03158370a55222"
-    SHORTENER_CUSTOM_ALIAS = ""
+sheet_config = load_config_from_sheet(IS_PROD)
+if not sheet_config:
+    sys.exit("Không thể tiếp tục vì không tải được cấu hình từ Google Sheet.")
 
-else:
-    # ====================================
-    # === CẤU HÌNH DEVELOPMENT (TEST) ===
-    # ====================================
-    print(">>> CHẠY Ở MÔI TRƯỜNG DEVELOPMENT <<<")
+load_cache_from_sheet(IS_PROD)
 
-    SESSION_NAME_USER = "dev_user"  # Sẽ tạo file dev_user.session riêng biệt
-    BOT_TOKEN = '7104369638:AAHJzGrYskAC9eEzE7M_ETs0Ga5hwttW--M' # THAY BẰNG TOKEN BOT TEST @BotMonChu TIenNu
-    
-    MAIN_CHANNEL_ID = -1002049708646 # THAY BẰNG ID CHANNEL TEST CỦA BẠN
-    
-    TARGET_ENTITIES = {
-        'A': -1002046713701,  # Channel 1
-        'B': -1002043853417,  # Channel 2
-        'D': -1002042025957,  # Group 1
-        'E': -1002036681213,  # Group 2
-        # ...thêm các kênh/nhóm test khác ở đây
-    }
 
-    # Cấu hình API rút gọn link cho Development
-    SHORTENER_API_URL = "https://vuotlink.vip/st"
-    SHORTENER_API_TOKEN = "f6918c1748d0d50744ea2a417d03158370a55222"
-    SHORTENER_CUSTOM_ALIAS = "test" # Thêm alias để phân biệt link test
+# --- GÁN CÁC BIẾN CẤU HÌNH ĐỂ CÁC FILE KHÁC SỬ DỤNG ---
+MAIN_CHANNEL_ID = int(sheet_config.get("MAIN_CHANNEL_ID"))
+BOT_TOKEN = sheet_config.get("BOT_TOKEN")
+SHORTENER_API_URL = sheet_config.get("SHORTENER_API_URL")
+SHORTENER_API_TOKEN = sheet_config.get("SHORTENER_API_TOKEN")
+TARGET_ENTITIES = sheet_config.get("TARGET_ENTITIES", {})
 
-# --- MẪU TIN NHẮN (Dùng chung cho cả hai môi trường) ---
+SESSION_NAME_USER = "prod_user" if IS_PROD else "dev_user"
+SHORTENER_CUSTOM_ALIAS = "" if IS_PROD else "test"
+
+
+# --- MẪU TIN NHẮN ---
 MESSAGE_TEMPLATE = """{title}
 
 🎯 Vào Xem Clip Ngay:
