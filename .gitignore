@@ -1,0 +1,11 @@
+# Session files
+*.session
+*.session-journal
+
+# Python cache
+__pycache__/
+*.pyc
+
+# IDE files
+.idea/
+.vscode/
