@@ -2,6 +2,8 @@
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
 from webdriver_manager.chrome import ChromeDriverManager
+# --- DÒNG IMPORT MỚI ---
+from selenium.webdriver.common.by import By
 from urllib.parse import urlencode
 import asyncio
 import time
@@ -44,7 +46,7 @@ def get_short_link_sync(long_url: str, api_url: str, api_token: str, custom_alia
         print("Lỗi: Trình duyệt Selenium chưa được khởi tạo.")
         return None
         
-    params = {'api': api_token, 'url': long_url} # Bỏ format=text vì nó không cần thiết cho logic redirect
+    params = {'api': api_token, 'url': long_url}
     if custom_alias:
         params['alias'] = custom_alias
 
@@ -53,23 +55,25 @@ def get_short_link_sync(long_url: str, api_url: str, api_token: str, custom_alia
 
     try:
         driver.get(initial_url)
-        # Đợi một chút để quá trình kiểm tra của Cloudflare và chuyển hướng xảy ra
-        # 7 giây là một khoảng thời gian khá an toàn
         time.sleep(7) 
         
-        # === LOGIC ĐÃ SỬA ===
-        # Lấy URL hiện tại trên thanh địa chỉ của trình duyệt SAU KHI đã chuyển hướng
         final_url = driver.current_url
 
-        # Kiểm tra xem URL đã thay đổi và có vẻ là một link rút gọn hợp lệ hay chưa
         if final_url and final_url != initial_url and "st?" not in final_url:
             print(f"Lấy link rút gọn thành công: {final_url}")
             return final_url
         else:
             print(f"Lỗi API: Trang không chuyển hướng. URL cuối cùng vẫn là: {final_url}")
-            # Cố gắng lấy nội dung trang để gỡ lỗi
-            page_content = driver.find_element_by_tag_name('body').text
-            print(f"Nội dung trang: {page_content[:200]}...")
+            
+            # --- DÒNG ĐÃ SỬA ---
+            # Thay đổi cách lấy nội dung trang để ổn định hơn trong đa luồng
+            try:
+                page_content = driver.find_element(By.TAG_NAME, 'body').text
+                print(f"Nội dung trang: {page_content[:200]}...")
+            except Exception as find_error:
+                print(f"Không thể lấy nội dung trang để gỡ lỗi: {find_error}")
+            # --------------------
+            
             return None
             
     except Exception as e:

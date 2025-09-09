@@ -1,86 +1,97 @@
 # src/bot/handlers.py
 import asyncio
 from telethon import events, TelegramClient
-import config
-# DÒNG SỬA: Chuyển import lên đầu file
+from src.services import shortener
 from src.utils import message_parser
+import config
 
-async def new_forwarding_request_handler(event: events.NewMessage.Event):
-    """Handles new messages from the User Client (O) and forwards them."""
-    # We only care about replies sent by our designated User Client
-    if not event.is_reply or event.sender_id != config.USER_CLIENT_ID:
+async def new_message_handler(event: events.NewMessage.Event):
+    """
+    Xử lý tất cả tin nhắn mới trong kênh chính M.
+    Bot sẽ rút gọn link, phản hồi lại kênh, sau đó gửi đi.
+    """
+    # BƯỚC 1: PHÂN TÍCH TIN NHẮN GỐC (H)
+    message_H = event.message
+    original_caption = message_H.text or message_H.raw_text
+
+    key, title, long_url = message_parser.parse_admin_message(original_caption)
+    
+    if not key or not title or not long_url:
+        return # Bỏ qua tin nhắn thường
+        
+    media_to_send = message_H.media
+    if not media_to_send:
+        print("Bot (P): Tin nhắn không có media. Bỏ qua.")
         return
 
-    print(f"Bot (P): Nhận được yêu cầu điều phối từ Client (O).")
+    print(f"Bot (P): Nhận được yêu cầu hợp lệ. Key: '{key}', Link: '{long_url}'")
 
+    # BƯỚC 2: RÚT GỌN LINK
+    print(f"Bot (P): Đang gọi Selenium để rút gọn link...")
+    short_link = await shortener.get_short_link(
+        long_url=long_url,
+        api_url=config.SHORTENER_API_URL,
+        api_token=config.SHORTENER_API_TOKEN,
+        custom_alias=config.SHORTENER_CUSTOM_ALIAS
+    )
+
+    if not short_link:
+        print(f"Bot (P): Không thể tạo link rút gọn.")
+        await message_H.reply("⚠️ Bot (P) lỗi: Không thể tạo link rút gọn.")
+        return
+
+    print(f"Bot (P): Đã tạo link rút gọn thành công: {short_link}")
+
+    # BƯỚC 3: TẠO CAPTION MỚI (NỘI DUNG CỦA Y)
+    new_caption = config.MESSAGE_TEMPLATE.format(title=title, short_link=short_link)
+
+    # --- BƯỚC MỚI VÀ QUAN TRỌNG: GỬI TIN NHẮN Y VÀO LẠI KÊNH M ---
     try:
-        # Get the original admin message (H) that the client replied to
-        original_message = await event.get_reply_message()
-        if not original_message:
-            return
-
-        # The new caption is the text of the client's message (Y)
-        new_caption = event.text
-
-        # The media is in the original message (H)
-        media_file = original_message.media
-
-        if not media_file:
-            print("Bot (P): Tin nhắn gốc không chứa media. Bỏ qua.")
-            return
-
-        # Get the dispatch key from the original message's caption (H)
-        original_caption = original_message.text or original_message.raw_text
-        key, _, _ = message_parser.parse_admin_message(original_caption)
-        
-        if not key:
-            print("Bot (P): Không tìm thấy key điều phối trong tin nhắn gốc. Bỏ qua.")
-            return
-
-        # Determine target channels
-        target_ids = []
-        if key == '!':
-            # Send to all
-            target_ids = list(config.TARGET_ENTITIES.values())
-            print(f"Bot (P): Key '!' - Gửi đến tất cả {len(target_ids)} kênh/nhóm.")
-        else:
-            # Send to specific targets
-            target_keys = key.replace('!', '')
-            for char_key in target_keys:
-                if char_key in config.TARGET_ENTITIES:
-                    target_ids.append(config.TARGET_ENTITIES[char_key])
-            print(f"Bot (P): Key '{key}' - Gửi đến {len(target_ids)} kênh/nhóm.")
-
-        if not target_ids:
-            await event.reply("⚠️ Lỗi: Key điều phối không hợp lệ hoặc không tìm thấy kênh/nhóm tương ứng.")
-            return
-
-        # Forward the message
-        sent_count = 0
-        for target_id in target_ids:
-            try:
-                await event.client.send_file(
-                    entity=target_id,
-                    file=media_file,
-                    caption=new_caption
-                )
-                sent_count += 1
-                await asyncio.sleep(1) # Small delay to avoid rate limits
-            except Exception as e:
-                print(f"Bot (P): Lỗi khi gửi đến {target_id}: {e}")
-
-        # Send a confirmation message back to the main channel
-        await event.reply(f"✅ Hoàn tất! Đã gửi thành công đến {sent_count}/{len(target_ids)} kênh/nhóm.")
-
+        print(f"Bot (P): Đang gửi tin nhắn đã định dạng (Y) vào lại kênh chính...")
+        # Gửi tin nhắn Y dưới dạng trả lời cho tin nhắn gốc H
+        await message_H.reply(new_caption)
+        print(f"Bot (P): Đã gửi tin nhắn Y thành công.")
     except Exception as e:
-        print(f"Bot (P): Đã xảy ra lỗi nghiêm trọng trong handler: {e}")
-        await event.reply(f"❌ Đã có lỗi xảy ra: {e}")
+        print(f"Bot (P): Lỗi khi gửi tin nhắn Y vào kênh chính: {e}")
+    # ----------------------------------------------------------------
+
+    # BƯỚC 4: XÁC ĐỊNH CÁC KÊNH/NHÓM ĐÍCH
+    target_ids = []
+    if key == '!':
+        target_ids = list(config.TARGET_ENTITIES.values())
+    else:
+        target_keys_str = key.replace('!', '')
+        for char_key in target_keys_str:
+            if char_key in config.TARGET_ENTITIES:
+                target_ids.append(config.TARGET_ENTITIES[char_key])
+
+    if not target_ids:
+        await message_H.reply(f"⚠️ Bot (P) lỗi: Key '{key}' không hợp lệ.")
+        return
+
+    # BƯỚC 5: GỬI SẢN PHẨM CUỐI CÙNG (MEDIA + CAPTION MỚI) ĐẾN CÁC ĐÍCH
+    print(f"Bot (P): Bắt đầu gửi đến {len(target_ids)} đích...")
+    sent_count = 0
+    for target_id in target_ids:
+        try:
+            await event.client.send_file(
+                entity=target_id,
+                file=media_to_send,
+                caption=new_caption
+            )
+            sent_count += 1
+            await asyncio.sleep(1)
+        except Exception as e:
+            print(f"Bot (P): Lỗi khi gửi đến {target_id}: {e}")
+            
+    # BƯỚC 6: GỬI PHẢN HỒI HOÀN TẤT
+    await message_H.reply(f"✅ Bot (P) hoàn tất! Đã gửi thành công đến {sent_count}/{len(target_ids)} kênh/nhóm.")
+    print(f"Bot (P): Hoàn tất tác vụ.")
 
 
 def register_bot_handlers(client: TelegramClient):
-    """Registers all event handlers for the bot."""
-    # DÒNG SỬA: Xóa các dòng import và globals() không cần thiết ở đây
+    """Đăng ký trình xử lý sự kiện cho bot."""
     client.add_event_handler(
-        new_forwarding_request_handler,
+        new_message_handler,
         events.NewMessage(chats=config.MAIN_CHANNEL_ID)
     )
