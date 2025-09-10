@@ -6,6 +6,8 @@ from src.services.shortener import init_browser, close_browser
 # Bỏ import sync_ram_cache_to_sheet vì không còn cần thiết
 from src.services.google_sheets import cleanup_and_save_cache_to_sheet
 from src.bot.handlers import register_bot_handlers
+from src.bot.admin_commands import register_admin_commands
+
 
 # -----------------------------------------------------------------------------
 # --- ĐỊNH NGHĨA "CON BOT DỌN DẸP" (CLEANUP WORKER) ---
@@ -47,6 +49,8 @@ async def main():
     
     print("Đăng ký trình xử lý sự kiện (handler)...")
     register_bot_handlers(bot_client)
+    register_admin_commands(bot_client) # Đăng ký handler xử lý lệnh admin
+
 
     # Khởi chạy Cleanup Worker sau một khoảng trễ nhỏ
     print("Chờ 10 giây trước khi khởi động Worker dọn dẹp...")

@@ -257,3 +257,77 @@ def cleanup_and_save_cache_to_sheet(is_prod: bool):
         print(f"[CLEANUP WORKER] Lỗi nghiêm trọng khi ghi lại cache vào Sheet: {e}")
     
     print(f"--- [CLEANUP WORKER] Hoàn tất tác vụ dọn dẹp ---")
+    
+    
+# --- CÁC HÀM MỚI CHO LỆNH /updateTargets ---
+
+def get_full_config(is_prod: bool) -> dict | None:
+    """
+    Đọc toàn bộ trang Config bằng get_all_values() để đảm bảo tương thích
+    và trả về một dictionary phức tạp.
+    """
+    if not sheet: return None
+    
+    worksheet_name = "Config_Prod" if is_prod else "Config_Dev"
+    try:
+        config_worksheet = sheet.worksheet(worksheet_name)
+        # SỬ DỤNG get_all_values() ĐỂ ĐẢM BẢO TƯƠNG THÍCH
+        all_rows = config_worksheet.get_all_values()
+        
+        if not all_rows:
+            return {}
+            
+        header = [h.strip() for h in all_rows[0]]
+        records = all_rows[1:]
+        
+        full_config = {}
+        for row_list in records:
+            # Thêm padding để tránh lỗi nếu hàng thiếu cột
+            row_list.extend([''] * (len(header) - len(row_list)))
+            row_dict = dict(zip(header, row_list))
+            
+            key = str(row_dict.get('Key')).strip()
+            if key:
+                full_config[key] = {
+                    'Value': str(row_dict.get('Value', '')).strip(),
+                    'Name': str(row_dict.get('Name', '')).strip(),
+                    'InviteLink': str(row_dict.get('InviteLink', '')).strip(),
+                }
+        return full_config
+    except Exception as e:
+        print(f"Lỗi khi đọc full config từ '{worksheet_name}': {e}")
+        return None
+
+
+
+def batch_update_target_info(updated_data: dict, is_prod: bool) -> bool:
+    """
+    Cập nhật hàng loạt cột Name và InviteLink dựa trên dữ liệu mới.
+    """
+    if not sheet: return False
+
+    worksheet_name = "Config_Prod" if is_prod else "Config_Dev"
+    try:
+        config_worksheet = sheet.worksheet(worksheet_name)
+        
+        # Tìm các ô cần cập nhật
+        cells_to_update = []
+        for key, data in updated_data.items():
+            try:
+                # Tìm dòng có Key tương ứng ở cột A
+                cell = config_worksheet.find(key, in_column=1)
+                # Thêm ô ở cột C (Name) và D (InviteLink) vào danh sách
+                cells_to_update.append(gspread.Cell(cell.row, 3, data['Name']))
+                cells_to_update.append(gspread.Cell(cell.row, 4, data['InviteLink']))
+            except gspread.exceptions.CellNotFound:
+                print(f"Cảnh báo: Không tìm thấy key '{key}' trong Sheet để cập nhật.")
+                continue
+
+        # Thực hiện cập nhật hàng loạt
+        if cells_to_update:
+            config_worksheet.update_cells(cells_to_update)
+            
+        return True
+    except Exception as e:
+        print(f"Lỗi khi cập nhật hàng loạt vào '{worksheet_name}': {e}")
+        return False
